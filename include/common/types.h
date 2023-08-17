@@ -140,7 +140,6 @@ public:
     Inner.Data.HTCode = HT;
     Inner.Data.Idx = 0;
     assuming(isAbsHeapType());
-    assuming(isRefType());
   }
   // Constructor for the value type with type index in reference type.
   ValType(TypeCode C, uint32_t I) noexcept {
@@ -207,11 +206,13 @@ public:
 
   bool isFuncRefType() const noexcept {
     return (Inner.Data.HTCode == TypeCode::FuncRef) ||
+           (Inner.Data.HTCode == TypeCode::NullFuncRef) ||
            (Inner.Data.HTCode == TypeCode::TypeIndex);
   }
 
   bool isExternRefType() const noexcept {
-    return (Inner.Data.HTCode == TypeCode::ExternRef);
+    return (Inner.Data.HTCode == TypeCode::ExternRef) ||
+           (Inner.Data.HTCode == TypeCode::NullExternRef);
   }
 
   bool isNullableRefType() const noexcept {
@@ -219,24 +220,66 @@ public:
   }
 
   bool isAbsHeapType() const noexcept {
-    switch (Inner.Data.HTCode) {
-    case TypeCode::NullFuncRef:
-    case TypeCode::NullExternRef:
-    case TypeCode::NullRef:
-    case TypeCode::FuncRef:
-    case TypeCode::ExternRef:
-    case TypeCode::AnyRef:
-    case TypeCode::EqRef:
-    case TypeCode::I31Ref:
-    case TypeCode::StructRef:
-    case TypeCode::ArrayRef:
-      return true;
+    if (isRefType()) {
+      switch (Inner.Data.HTCode) {
+      case TypeCode::NullFuncRef:
+      case TypeCode::NullExternRef:
+      case TypeCode::NullRef:
+      case TypeCode::FuncRef:
+      case TypeCode::ExternRef:
+      case TypeCode::AnyRef:
+      case TypeCode::EqRef:
+      case TypeCode::I31Ref:
+      case TypeCode::StructRef:
+      case TypeCode::ArrayRef:
+        return true;
+      default:
+        return false;
+      }
+    }
+    return false;
+  }
+
+  uint32_t getBitWidth() const noexcept {
+    switch (Inner.Data.Code) {
+    case TypeCode::I8:
+      return 8U;
+    case TypeCode::I16:
+      return 16U;
+    case TypeCode::I32:
+    case TypeCode::F32:
+      return 32U;
+    case TypeCode::I64:
+    case TypeCode::F64:
+      return 64U;
+    case TypeCode::V128:
+      return 128U;
     default:
-      return false;
+      // Bit width not available for reftypes.
+      assumingUnreachable();
     }
   }
 
-protected:
+  ValType getNullableRef() const noexcept {
+    assuming(isRefType());
+    return ValType(TypeCode::RefNull, Inner.Data.HTCode, Inner.Data.Idx);
+  }
+  ValType &toNullableRef() noexcept {
+    assuming(isRefType());
+    Inner.Data.Code = TypeCode::RefNull;
+    return *this;
+  }
+  ValType getNonNullableRef() const noexcept {
+    assuming(isRefType());
+    return ValType(TypeCode::Ref, Inner.Data.HTCode, Inner.Data.Idx);
+  }
+  ValType &toNonNullableRef() noexcept {
+    assuming(isRefType());
+    Inner.Data.Code = TypeCode::Ref;
+    return *this;
+  }
+
+private:
   union {
     uint8_t Raw[8];
     struct {
@@ -303,6 +346,8 @@ private:
 /// FuncRef definition.
 namespace Runtime::Instance {
 class FunctionInstance;
+class StructInstance;
+class ArrayInstance;
 } // namespace Runtime::Instance
 
 /// NumType and RefType variant definitions.
@@ -317,8 +362,17 @@ struct RefVariant {
   template <typename T> RefVariant(const T *P) noexcept {
     setData(TypeCode::ExternRef, reinterpret_cast<const void *>(P));
   }
+  template <typename T> RefVariant(const ValType &VT, const T *P) noexcept {
+    setData(VT, reinterpret_cast<const void *>(P));
+  }
   RefVariant(const Runtime::Instance::FunctionInstance *P) noexcept {
     setData(TypeCode::FuncRef, reinterpret_cast<const void *>(P));
+  }
+  RefVariant(const Runtime::Instance::StructInstance *P) noexcept {
+    setData(TypeCode::StructRef, reinterpret_cast<const void *>(P));
+  }
+  RefVariant(const Runtime::Instance::ArrayInstance *P) noexcept {
+    setData(TypeCode::ArrayRef, reinterpret_cast<const void *>(P));
   }
 
   // Getter of type.

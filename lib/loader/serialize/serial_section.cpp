@@ -29,12 +29,38 @@ Serializer::serializeSection(const AST::CustomSection &Sec,
 Expect<void>
 Serializer::serializeSection(const AST::TypeSection &Sec,
                              std::vector<uint8_t> &OutVec) const noexcept {
-  // Type section: 0x01 + size:u32 + content:vec(functype).
-  return serializeSectionContent(
-      Sec, 0x01U, OutVec,
-      [=](const AST::FunctionType &R, std::vector<uint8_t> &V) {
-        return serializeType(R, V);
-      });
+  // Type section: 0x01 + size:u32 + content:vec(rectype).
+  if (Sec.getRecursiveSizes().size()) {
+    // Section ID.
+    OutVec.push_back(0x01U);
+    auto OrgSize = OutVec.size();
+    // Content: vec(rectype).
+    serializeU32(static_cast<uint32_t>(Sec.getRecursiveSizes().size()), OutVec);
+    uint32_t SerializedCount = 0;
+    for (const auto RecSize : Sec.getRecursiveSizes()) {
+      if (RecSize + SerializedCount > Sec.getContent().size()) {
+        return logSerializeError(ErrCode::Value::MalformedValType,
+                                 ASTNodeAttr::Type_Rec);
+      }
+      // Recursive type: vec(subtype) | subtype
+      if (RecSize > 1) {
+        OutVec.push_back(static_cast<uint8_t>(TypeCode::Rec));
+        serializeU32(RecSize, OutVec);
+      }
+      for (uint32_t Idx = SerializedCount; Idx < SerializedCount + RecSize;
+           Idx++) {
+        if (auto Res = serializeType(Sec.getContent()[Idx], OutVec);
+            unlikely(!Res)) {
+          return Unexpect(Res);
+        }
+      }
+      SerializedCount += RecSize;
+    }
+    // Backward insert the section size.
+    serializeU32(static_cast<uint32_t>(OutVec.size() - OrgSize), OutVec,
+                 std::next(OutVec.begin(), static_cast<ptrdiff_t>(OrgSize)));
+  }
+  return {};
 }
 
 // Serialize import section. See "include/loader/serialize.h".

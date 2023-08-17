@@ -394,20 +394,21 @@ public:
                void *ExtData, const uint64_t FuncCost = 0) noexcept
       : Runtime::HostFunctionBase(FuncCost), Func(FuncPtr), Wrap(nullptr),
         Binding(nullptr), Data(ExtData) {
-    FuncType = *Type;
+    DefTypePtr->getCompositeType().getFuncType() = *Type;
   }
   CAPIHostFunc(const AST::FunctionType *Type, WasmEdge_WrapFunc_t WrapPtr,
                void *BindingPtr, void *ExtData,
                const uint64_t FuncCost = 0) noexcept
       : Runtime::HostFunctionBase(FuncCost), Func(nullptr), Wrap(WrapPtr),
         Binding(BindingPtr), Data(ExtData) {
-    FuncType = *Type;
+    DefTypePtr->getCompositeType().getFuncType() = *Type;
   }
   ~CAPIHostFunc() noexcept override = default;
 
   Expect<void> run(const Runtime::CallingFrame &CallFrame,
                    Span<const ValVariant> Args,
                    Span<ValVariant> Rets) override {
+    auto &FuncType = DefTypePtr->getCompositeType().getFuncType();
     std::vector<WasmEdge_Value> Params(FuncType.getParamTypes().size()),
         Returns(FuncType.getReturnTypes().size());
     for (uint32_t I = 0; I < Args.size(); I++) {
@@ -1373,12 +1374,10 @@ WasmEdge_ImportTypeGetFunctionType(const WasmEdge_ASTModuleContext *ASTCxt,
       fromImpTypeCxt(Cxt)->getExternalType() ==
           WasmEdge::ExternalType::Function) {
     uint32_t Idx = fromImpTypeCxt(Cxt)->getExternalFuncTypeIdx();
-    const auto &FuncTypes =
-        fromASTModCxt(ASTCxt)->getTypeSection().getContent();
-    if (Idx >= FuncTypes.size()) {
-      return nullptr;
+    auto SubTypes = fromASTModCxt(ASTCxt)->getTypeSection().getContent();
+    if (Idx < SubTypes.size() && SubTypes[Idx].getCompositeType().isFunc()) {
+      return toFuncTypeCxt(&(SubTypes[Idx].getCompositeType().getFuncType()));
     }
-    return toFuncTypeCxt(&FuncTypes[Idx]);
   }
   return nullptr;
 }
@@ -1446,7 +1445,6 @@ WasmEdge_ExportTypeGetFunctionType(const WasmEdge_ASTModuleContext *ASTCxt,
           WasmEdge::ExternalType::Function) {
     auto ImpDescs = fromASTModCxt(ASTCxt)->getImportSection().getContent();
     auto FuncIdxs = fromASTModCxt(ASTCxt)->getFunctionSection().getContent();
-    auto FuncTypes = fromASTModCxt(ASTCxt)->getTypeSection().getContent();
     uint32_t ExtIdx = fromExpTypeCxt(Cxt)->getExternalIndex();
 
     // Indexing the import descriptions.
@@ -1469,11 +1467,13 @@ WasmEdge_ExportTypeGetFunctionType(const WasmEdge_ASTModuleContext *ASTCxt,
       // Invalid function index.
       return nullptr;
     }
-    // Get the function type by index.
-    if (TypeIdx >= FuncTypes.size()) {
-      return nullptr;
+    // Get the function type.
+    auto SubTypes = fromASTModCxt(ASTCxt)->getTypeSection().getContent();
+    if (TypeIdx < SubTypes.size() &&
+        SubTypes[TypeIdx].getCompositeType().isFunc()) {
+      return toFuncTypeCxt(
+          &(SubTypes[TypeIdx].getCompositeType().getFuncType()));
     }
-    return toFuncTypeCxt(&FuncTypes[TypeIdx]);
   }
   return nullptr;
 }
@@ -2206,8 +2206,8 @@ WasmEdge_FunctionInstanceCreate(const WasmEdge_FunctionTypeContext *Type,
                                 const uint64_t Cost) {
   if (Type && HostFunc) {
     return toFuncCxt(new WasmEdge::Runtime::Instance::FunctionInstance(
-        nullptr, std::make_unique<CAPIHostFunc>(fromFuncTypeCxt(Type), HostFunc,
-                                                Data, Cost)));
+        std::make_unique<CAPIHostFunc>(fromFuncTypeCxt(Type), HostFunc, Data,
+                                       Cost)));
   }
   return nullptr;
 }
@@ -2219,8 +2219,8 @@ WasmEdge_FunctionInstanceCreateBinding(const WasmEdge_FunctionTypeContext *Type,
                                        const uint64_t Cost) {
   if (Type && WrapFunc) {
     return toFuncCxt(new WasmEdge::Runtime::Instance::FunctionInstance(
-        nullptr, std::make_unique<CAPIHostFunc>(fromFuncTypeCxt(Type), WrapFunc,
-                                                Binding, Data, Cost)));
+        std::make_unique<CAPIHostFunc>(fromFuncTypeCxt(Type), WrapFunc, Binding,
+                                       Data, Cost)));
   }
   return nullptr;
 }
@@ -2570,7 +2570,7 @@ WASMEDGE_CAPI_EXPORT WasmEdge_Result WasmEdge_GlobalInstanceSetValue(
             return Unexpect(WasmEdge::ErrCode::Value::SetValueErrorType);
           }
         }
-        fromGlobCxt(Cxt)->getValue() = Val;
+        fromGlobCxt(Cxt)->setValue(Val);
         return {};
       },
       EmptyThen, Cxt);

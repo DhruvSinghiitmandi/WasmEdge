@@ -16,11 +16,13 @@
 #include "ast/type.h"
 #include "common/errcode.h"
 #include "runtime/hostfunc.h"
+#include "runtime/instance/array.h"
 #include "runtime/instance/data.h"
 #include "runtime/instance/elem.h"
 #include "runtime/instance/function.h"
 #include "runtime/instance/global.h"
 #include "runtime/instance/memory.h"
+#include "runtime/instance/struct.h"
 #include "runtime/instance/table.h"
 
 #include <atomic>
@@ -91,14 +93,18 @@ public:
   void addHostFunc(std::string_view Name,
                    std::unique_ptr<HostFunctionBase> &&Func) {
     std::unique_lock Lock(Mutex);
-    unsafeAddHostInstance(Name, OwnedFuncInsts, FuncInsts, ExpFuncs,
-                          std::make_unique<Runtime::Instance::FunctionInstance>(
-                              this, std::move(Func)));
+    unsafeAddDefinedType(Func->moveDefType());
+    unsafeAddHostInstance(
+        Name, OwnedFuncInsts, FuncInsts, ExpFuncs,
+        std::make_unique<Runtime::Instance::FunctionInstance>(
+            this, static_cast<uint32_t>(Types.size()) - 1, std::move(Func)));
   }
   void addHostFunc(std::string_view Name,
                    std::unique_ptr<Instance::FunctionInstance> &&Func) {
     std::unique_lock Lock(Mutex);
-    Func->setModule(this);
+    assuming(Func->isHostFunction());
+    unsafeAddDefinedType(Func->getHostFunc().moveDefType());
+    Func->linkDefinedType(this, static_cast<uint32_t>(Types.size()) - 1);
     unsafeAddHostInstance(Name, OwnedFuncInsts, FuncInsts, ExpFuncs,
                           std::move(Func));
   }
@@ -183,10 +189,15 @@ protected:
   friend class Executor::Executor;
   friend class Runtime::CallingFrame;
 
-  /// Copy the function types in type section to this module instance.
-  void addFuncType(const AST::FunctionType &FuncType) {
+  /// Create and copy the defined type to this module instance.
+  void addDefinedType(const AST::SubType &SType) {
     std::unique_lock Lock(Mutex);
-    FuncTypes.emplace_back(FuncType);
+    unsafeAddDefinedType(std::make_unique<AST::SubType>(SType));
+  }
+  void unsafeAddDefinedType(std::unique_ptr<AST::SubType> &&SType) {
+    OwnedTypes.push_back(std::move(SType));
+    OwnedTypes.back()->setTypeIndex(Types.size());
+    Types.push_back(OwnedTypes.back().get());
   }
 
   /// Create and add instances into this module instance.
@@ -253,17 +264,21 @@ protected:
     ExpGlobals.insert_or_assign(std::string(Name), GlobInsts[Idx]);
   }
 
-  /// Get function type by index.
-  Expect<const AST::FunctionType *> getFuncType(uint32_t Idx) const noexcept {
+  /// Get defined type list.
+  Span<const AST::SubType *const> getTypeList() const noexcept { return Types; }
+
+  /// Get instance pointer by index.
+  Expect<const AST::SubType *> getType(uint32_t Idx) const noexcept {
     std::shared_lock Lock(Mutex);
-    if (unlikely(Idx >= FuncTypes.size())) {
+    if (unlikely(Idx >= Types.size())) {
       // Error logging need to be handled in caller.
       return Unexpect(ErrCode::Value::WrongInstanceIndex);
     }
-    return &FuncTypes[Idx];
+    return unsafeGetType(Idx);
   }
-
-  /// Get instance pointer by index.
+  const AST::SubType *unsafeGetType(uint32_t Idx) const noexcept {
+    return Types[Idx];
+  }
   Expect<FunctionInstance *> getFunc(uint32_t Idx) const noexcept {
     std::shared_lock Lock(Mutex);
     if (Idx >= FuncInsts.size()) {
@@ -348,6 +363,17 @@ protected:
   /// Get imported global instances count.
   uint32_t getGlobalImportNum() const noexcept { return ImpGlobalNum; }
 
+  /// Expand defined type into abstract heap type.
+  ValType expandValType(const ValType &VT) const noexcept {
+    std::shared_lock Lock(Mutex);
+    if (!VT.isRefType() || VT.isAbsHeapType()) {
+      return VT;
+    } else {
+      const auto *ST = unsafeGetType(VT.getTypeIndex());
+      return ValType(VT.getCode(), ST->getCompositeType().expand());
+    }
+  }
+
   /// Set the start function index and find the function instance.
   void setStartIdx(uint32_t Idx) noexcept {
     std::unique_lock Lock(Mutex);
@@ -429,8 +455,9 @@ protected:
   /// Module name.
   const std::string ModName;
 
-  /// Function types.
-  std::vector<AST::FunctionType> FuncTypes;
+  /// Defined types.
+  std::vector<AST::SubType *> Types;
+  std::vector<std::unique_ptr<AST::SubType>> OwnedTypes;
 
   /// Owned instances in this module.
   std::vector<std::unique_ptr<Instance::FunctionInstance>> OwnedFuncInsts;

@@ -70,13 +70,18 @@ private:
 class TypeSection : public Section {
 public:
   /// Getter of content vector.
-  Span<const FunctionType> getContent() const noexcept { return Content; }
-  std::vector<FunctionType> &getContent() noexcept { return Content; }
+  Span<const SubType> getContent() const noexcept { return Content; }
+  std::vector<SubType> &getContent() noexcept { return Content; }
+
+  /// Getter of SubType set (recursive type) sizes.
+  Span<const uint32_t> getRecursiveSizes() const noexcept { return RecSizes; }
+  std::vector<uint32_t> &getRecursiveSizes() noexcept { return RecSizes; }
 
 private:
   /// \name Data of TypeSection.
   /// @{
-  std::vector<FunctionType> Content;
+  std::vector<SubType> Content;
+  std::vector<uint32_t> RecSizes;
   /// @}
 };
 

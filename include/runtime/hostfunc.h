@@ -27,10 +27,17 @@ namespace Runtime {
 
 class CallingFrame;
 
+namespace Instance {
+class ModuleInstance;
+}
+
 class HostFunctionBase {
 public:
   HostFunctionBase() = delete;
-  HostFunctionBase(const uint64_t FuncCost) : Cost(FuncCost) {}
+  HostFunctionBase(const uint64_t FuncCost) : Cost(FuncCost) {
+    DefType = std::make_unique<AST::SubType>(AST::FunctionType());
+    DefTypePtr = DefType.get();
+  }
   virtual ~HostFunctionBase() = default;
 
   /// Run host function body.
@@ -39,13 +46,22 @@ public:
                            Span<ValVariant> Rets) = 0;
 
   /// Getter of function type.
-  const AST::FunctionType &getFuncType() const { return FuncType; }
+  const AST::FunctionType &getFuncType() const noexcept {
+    assuming(DefTypePtr && DefTypePtr->getCompositeType().isFunc());
+    return DefTypePtr->getCompositeType().getFuncType();
+  }
 
   /// Getter of host function cost.
   uint64_t getCost() const { return Cost; }
 
 protected:
-  AST::FunctionType FuncType;
+  friend class Instance::ModuleInstance;
+  std::unique_ptr<AST::SubType> moveDefType() noexcept {
+    return std::move(DefType);
+  }
+
+  AST::SubType *DefTypePtr;
+  std::unique_ptr<AST::SubType> DefType;
   const uint64_t Cost;
 };
 
@@ -93,6 +109,8 @@ protected:
   }
 
   void initializeFuncType() {
+    assuming(DefTypePtr && DefTypePtr->getCompositeType().isFunc());
+    auto &FuncType = DefTypePtr->getCompositeType().getFuncType();
     using F = FuncTraits<decltype(&T::body)>;
     using ArgsT = typename F::ArgsT;
     FuncType.getParamTypes().reserve(F::ArgsN);
@@ -145,6 +163,7 @@ private:
 
   template <typename Tuple, std::size_t... Indices>
   void pushValType(std::index_sequence<Indices...>) {
+    auto &FuncType = DefTypePtr->getCompositeType().getFuncType();
     (FuncType.getParamTypes().push_back(
          ValTypeFromType<std::tuple_element_t<Indices, Tuple>>()),
      ...);
@@ -152,6 +171,7 @@ private:
 
   template <typename Tuple, std::size_t... Indices>
   void pushRetType(std::index_sequence<Indices...>) {
+    auto &FuncType = DefTypePtr->getCompositeType().getFuncType();
     (FuncType.getReturnTypes().push_back(
          ValTypeFromType<std::tuple_element_t<Indices, Tuple>>()),
      ...);
