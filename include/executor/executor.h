@@ -152,6 +152,14 @@ public:
   Expect<std::unique_ptr<Runtime::Instance::ModuleInstance>>
   instantiateModule(Runtime::StoreManager &StoreMgr, const AST::Module &Mod);
 
+  Expect<std::unique_ptr<Runtime::Instance::ComponentInstance>>
+  instantiateComponent(Runtime::StoreManager &StoreMgr,
+                       const AST::Component::Component &Comp);
+  Expect<std::unique_ptr<Runtime::Instance::ComponentInstance>>
+  instantiateComponent(Runtime::StoreManager &StoreMgr,
+                       const AST::Component::Component &Comp,
+                       std::string_view Name);
+
   /// Instantiate and register a WASM module into a named module instance.
   Expect<std::unique_ptr<Runtime::Instance::ModuleInstance>>
   registerModule(Runtime::StoreManager &StoreMgr, const AST::Module &Mod,
@@ -207,6 +215,11 @@ private:
   /// Instantiation of Module Instance.
   Expect<std::unique_ptr<Runtime::Instance::ModuleInstance>>
   instantiate(Runtime::StoreManager &StoreMgr, const AST::Module &Mod,
+              std::optional<std::string_view> Name = std::nullopt);
+
+  Expect<std::unique_ptr<Runtime::Instance::ComponentInstance>>
+  instantiate(Runtime::StoreManager &StoreMgr,
+              const AST::Component::Component &Comp,
               std::optional<std::string_view> Name = std::nullopt);
 
   /// Instantiation of Imports.

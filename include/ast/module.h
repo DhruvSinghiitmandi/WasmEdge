@@ -175,7 +175,13 @@ public:
   std::vector<CoreInstanceSection> &getCoreInstanceSection() noexcept {
     return CoreInstSec;
   }
+  Span<const CoreInstanceSection> getCoreInstanceSection() const noexcept {
+    return CoreInstSec;
+  }
   std::vector<CoreTypeSection> &getCoreTypeSection() noexcept {
+    return CoreTypeSec;
+  }
+  Span<const CoreTypeSection> getCoreTypeSection() const noexcept {
     return CoreTypeSec;
   }
   ComponentSection &getComponentSection() noexcept { return CompSec; }
@@ -185,12 +191,21 @@ public:
   std::vector<InstanceSection> &getInstanceSection() noexcept {
     return InstSec;
   }
+  Span<const InstanceSection> getInstanceSection() const noexcept {
+    return InstSec;
+  }
   std::vector<AliasSection> &getAliasSection() noexcept { return AliasSec; }
+  Span<const AliasSection> getAliasSection() const noexcept { return AliasSec; }
   std::vector<TypeSection> &getTypeSection() noexcept { return TySec; }
+  Span<const TypeSection> getTypeSection() const noexcept { return TySec; }
   std::vector<CanonSection> &getCanonSection() noexcept { return CanonSec; }
+  Span<const CanonSection> getCanonSection() const noexcept { return CanonSec; }
   StartSection &getStartSection() noexcept { return StartSec; }
+  const StartSection &getStartSection() const noexcept { return StartSec; }
   std::vector<ImportSection> &getImportSection() noexcept { return ImSec; }
+  Span<const ImportSection> getImportSection() const noexcept { return ImSec; }
   std::vector<ExportSection> &getExportSection() noexcept { return ExSec; }
+  Span<const ExportSection> getExportSection() const noexcept { return ExSec; }
 
 private:
   /// \name Data of Module node.

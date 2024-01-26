@@ -13,16 +13,7 @@
 namespace WasmEdge {
 namespace Validator {
 
-Expect<void> Validator::validate(const AST::Component::Component &Comp) {
-  spdlog::warn("component validation is not done yet.");
-
-  for (auto &Mod : Comp.getCoreModuleSection().getContent()) {
-    validate(Mod);
-  }
-  for (const std::shared_ptr<AST::Component::Component> &C :
-       Comp.getComponentSection().getContent()) {
-    validate(*C);
-  }
+Expect<void> Validator::validate(const AST::Component::Component &) {
 
   return {};
 }
