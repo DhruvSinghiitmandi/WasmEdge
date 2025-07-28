@@ -371,6 +371,18 @@ bool AllowAFUNIX(const Runtime::CallingFrame &Frame,
 }
 } // namespace
 
+template <typename T>
+inline bool isAligned(const WasmEdge::Runtime::Instance::MemoryInstance &MemInst,
+                      uint32_t Ptr) {
+  if (!MemInst.checkAccessBound(Ptr, sizeof(T))) {
+    return false;
+  }
+
+  const uintptr_t Address = reinterpret_cast<uintptr_t>(MemInst.getPointer<T *>(Ptr));
+  return (Address % alignof(T)) == 0;
+}
+
+
 Expect<uint32_t> WasiArgsGet::body(const Runtime::CallingFrame &Frame,
                                    uint32_t ArgvPtr, uint32_t ArgvBufPtr) {
   // Check memory instance from module.
@@ -378,7 +390,14 @@ Expect<uint32_t> WasiArgsGet::body(const Runtime::CallingFrame &Frame,
   if (MemInst == nullptr) {
     return __WASI_ERRNO_FAULT;
   }
-
+  if( unlikely(!isAligned<uint32_t>(*MemInst, ArgvPtr)) ||
+      unlikely(!isAligned<uint32_t>(*MemInst, ArgvBufPtr))) {
+    return __WASI_ERRNO_FAULT;
+  }
+  if( unlikely(!MemInst->checkAccessBound(ArgvPtr, sizeof(uint32_t)) ||
+             !MemInst->checkAccessBound(ArgvBufPtr, sizeof(uint32_t)))) {
+    return __WASI_ERRNO_FAULT;
+  }
   // Store **Argv.
   const auto &Arguments = Env.getArguments();
   const uint32_t ArgvSize = static_cast<uint32_t>(Arguments.size());
@@ -405,14 +424,22 @@ Expect<uint32_t> WasiArgsGet::body(const Runtime::CallingFrame &Frame,
   return __WASI_ERRNO_SUCCESS;
 }
 
+
 Expect<uint32_t> WasiArgsSizesGet::body(const Runtime::CallingFrame &Frame,
                                         uint32_t /* Out */ ArgcPtr,
                                         uint32_t /* Out */ ArgvBufSizePtr) {
   // Check memory instance from module.
+
   auto *MemInst = Frame.getMemoryByIndex(0);
   if (MemInst == nullptr) {
     return __WASI_ERRNO_FAULT;
   }
+  if(unlikely(!isAligned<__wasi_ciovec_t>(*MemInst, ArgcPtr)) ||
+     unlikely(!isAligned<__wasi_ciovec_t>(*MemInst, ArgvBufSizePtr))) {
+    return __WASI_ERRNO_FAULT;
+  }
+
+  
 
   // Check for invalid address.
   auto *const __restrict__ Argc = MemInst->getPointer<__wasi_size_t *>(ArgcPtr);
@@ -1051,7 +1078,13 @@ Expect<uint32_t> WasiFdWrite::body(const Runtime::CallingFrame &Frame,
   if (MemInst == nullptr) {
     return __WASI_ERRNO_FAULT;
   }
-
+  if(unlikely(!isAligned<__wasi_ciovec_t>(*MemInst, IOVsPtr)) ||
+     unlikely(!isAligned<__wasi_size_t>(*MemInst, NWrittenPtr))) {
+    return __WASI_ERRNO_FAULT;
+  }
+  if(unlikely(!MemInst->checkAccessBound(IOVsPtr, IOVsLen * sizeof(__wasi_ciovec_t)))) {
+    return __WASI_ERRNO_FAULT;
+  }
   const __wasi_size_t WasiIOVsLen = IOVsLen;
   if (unlikely(WasiIOVsLen > WASI::kIOVMax)) {
     return __WASI_ERRNO_INVAL;
